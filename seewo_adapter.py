@@ -67,6 +67,7 @@ class SeewoAdapter(Platform):
         self.settings = platform_settings
         self._poll_interval = platform_config.get("poll_interval", 5)
         self._running = False
+        self._data_dir = _SEEWO_DATA_DIR
 
         # 希沃会话对象
         self._account: acc | None = None
@@ -82,6 +83,36 @@ class SeewoAdapter(Platform):
 
     def meta(self) -> PlatformMetadata:
         return self._metadata
+
+    # ── 公共只读属性 ──
+
+    @property
+    def account(self):
+        return self._account
+
+    @property
+    def student(self):
+        return self._student
+
+    @property
+    def poll_interval(self) -> int:
+        return self._poll_interval
+
+    @property
+    def last_msg_id(self) -> int:
+        return self._last_msg_id
+
+    @property
+    def data_dir(self) -> str:
+        return self._data_dir
+
+    @property
+    def logged_in(self) -> bool:
+        return self._account is not None and not self._account.token_expired
+
+    @property
+    def ready(self) -> bool:
+        return self._stu_msg is not None and self.logged_in
 
     async def send_by_session(
         self, session: MessageSesion, message_chain: MessageChain
@@ -107,7 +138,7 @@ class SeewoAdapter(Platform):
             # 2. 如果 Token 过期则走扫码登录
             if self._account is None or self._account.token_expired:
                 logger.info("Seewo: Token 无效或不存在，开始扫码登录流程…")
-                await asyncio.to_thread(self._login)
+                await asyncio.to_thread(self.login)
 
             if self._account is None or self._account.token_expired:
                 logger.error("Seewo: 登录失败，适配器无法启动")
@@ -173,7 +204,7 @@ class SeewoAdapter(Platform):
             logger.error(f"Seewo: 会话初始化失败: {e}")
             self._account = None
 
-    def _login(self) -> None:
+    def login(self) -> None:
         """微信扫码登录（在线程中执行）"""
         try:
             cookies = download_qrcode()
