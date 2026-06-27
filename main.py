@@ -1,5 +1,4 @@
 import asyncio
-import time
 
 from astrbot.api.star import Context, Star, register
 from astrbot.api import logger
@@ -32,56 +31,58 @@ class SeewoAdapterPlugin(Star):
             return
 
         lines = [f"适配器状态: {adapter.status}"]
-        if adapter.logged_in:
-            lines.append(f"已登录 UID: {adapter.account.uid}")
-        else:
-            lines.append("未登录或 Token 已过期")
-        if adapter.student:
-            lines.append(f"关联学生: {adapter.student.name}")
+        lines.append(f"API 服务器: {adapter.api_url}")
+        lines.append(f"已登录: {adapter.logged_in}")
         lines.append(f"轮询间隔: {adapter.poll_interval}s")
         lines.append(f"最新消息 ID: {adapter.last_msg_id}")
+
+        # 尝试从 API 获取详细状态
+        if adapter.ready:
+            try:
+                status = await adapter._api_get("/api/status")
+                student = status.get("student", {})
+                if student:
+                    lines.append(f"关联学生: {student.get('name', 'unknown')}")
+            except Exception:
+                pass
+
         yield event.plain_result("\n".join(lines))
 
     @command("seewo_login")
     async def seewo_login(self, event):
-        """重新触发希沃扫码登录"""
+        """触发扫码登录（通过 API 服务器）"""
         adapter = self._get_adapter()
-        if not adapter:
-            yield event.plain_result("未找到希沃适配器实例")
+        if not adapter or not adapter.ready:
+            yield event.plain_result("希沃适配器未就绪")
             return
 
         if adapter.logged_in:
             yield event.plain_result("当前已登录，无需重新登录")
             return
 
-        yield event.plain_result("正在触发登录流程，请查看 AstrBot 日志中的二维码…")
-        await asyncio.to_thread(adapter.login)
-        if adapter.logged_in:
-            yield event.plain_result("登录成功！")
-        else:
-            yield event.plain_result("登录失败，请查看日志")
-
-    @command("seewo_getpass")
-    async def seewo_getpass(self, event, school_uid: str, sn_code: str):
-        """云班离线验证通行证
-
-        用法: /seewo_getpass <schoolUid> <snCode>
-        """
-        adapter = self._get_adapter()
-        if not adapter or not adapter.logged_in:
-            yield event.plain_result("希沃适配器未登录")
-            return
-
-        from .things.yunban import getpass
+        yield event.plain_result("正在获取登录二维码，请查看 API 服务器日志中的二维码…")
 
         try:
-            result = await asyncio.to_thread(
-                getpass,
-                adapter.account,
-                school_uid,
-                sn_code,
-                str(int(time.time() * 1000)),
-            )
-            yield event.plain_result(str(result))
+            # 触发 API 服务器的登录流程
+            qr_result = await adapter._api_get("/api/login/qrcode")
+            if qr_result.get("status") != "ok":
+                yield event.plain_result(f"获取二维码失败: {qr_result.get('message', '')}")
+                return
+
+            # 轮询登录状态
+            for _ in range(150):  # 最多 5 分钟
+                await asyncio.sleep(2)
+                login_status = await adapter._api_get("/api/login/status")
+                status = login_status.get("status")
+                if status == "ok":
+                    adapter._logged_in = True
+                    yield event.plain_result("登录成功！")
+                    return
+                elif status == "error":
+                    yield event.plain_result(f"登录失败: {login_status.get('message', '')}")
+                    return
+                # pending: 继续轮询
+
+            yield event.plain_result("登录超时")
         except Exception as e:
-            yield event.plain_result(f"获取通行证失败: {e}")
+            yield event.plain_result(f"登录异常: {e}")
