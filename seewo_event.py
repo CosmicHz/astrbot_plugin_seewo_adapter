@@ -2,11 +2,12 @@
 """
 希沃亲情留言平台事件
 
-处理 AstrBot → 希沃方向的消息发送，支持文本、图片、语音。
+通过本地 API 服务器发送消息，支持文本、图片、语音。
 """
 
-import asyncio
 import os
+
+import aiohttp
 
 from astrbot.api import logger
 from astrbot.api.event import AstrMessageEvent, MessageChain
@@ -16,7 +17,7 @@ from astrbot.api.message_components import Image, Plain, Record
 class SeewoEvent(AstrMessageEvent):
     """希沃亲情留言事件
 
-    持有适配器引用，以便在 send() 时调用希沃 API 发送消息。
+    持有适配器引用，通过 API 服务器发送消息。
     """
 
     def __init__(
@@ -32,45 +33,36 @@ class SeewoEvent(AstrMessageEvent):
 
     async def send(self, message: MessageChain) -> None:
         """发送消息到希沃亲情留言"""
-        await SeewoEvent._send_chain(
-            self._adapter._stu_msg, self._adapter._account, message
-        )
+        await SeewoEvent._send_chain(self._adapter, message)
         await super().send(message)
 
     # ── 静态发送方法，供 Event.send() 和 send_by_session() 共用 ──
 
     @staticmethod
-    async def _send_chain(stu_msg, account, message: MessageChain) -> None:
-        """将 MessageChain 中的组件逐一发送到希沃
-
-        Args:
-            stu_msg: things.msg.msg 实例
-            account: things.login.acc 实例
-            message: AstrBot 消息链
-        """
+    async def _send_chain(adapter, message: MessageChain) -> None:
+        """将 MessageChain 中的组件逐一发送"""
         for comp in message.chain:
             if isinstance(comp, Plain):
-                await SeewoEvent._send_text(stu_msg, comp.text)
+                await SeewoEvent._send_text(adapter, comp.text)
             elif isinstance(comp, Image):
-                await SeewoEvent._send_image(stu_msg, account, comp)
+                await SeewoEvent._send_image(adapter, comp)
             elif isinstance(comp, Record):
-                await SeewoEvent._send_audio(stu_msg, account, comp)
+                await SeewoEvent._send_audio(adapter, comp)
             else:
                 logger.debug(f"Seewo: 忽略不支持的消息组件: {type(comp).__name__}")
 
     @staticmethod
-    async def _send_text(stu_msg, text: str) -> None:
+    async def _send_text(adapter, text: str) -> None:
         """发送文本消息"""
         if not text:
             return
-        # 希沃限制单条消息 199 字
         if len(text) > 199:
             text = text[:196] + "..."
-        await asyncio.to_thread(stu_msg.send, text, 1)
+        await adapter._api_post("/api/send", {"content": text})
 
     @staticmethod
-    async def _send_image(stu_msg, account, image: Image) -> None:
-        """发送图片：先下载到本地 → 上传到希沃云 → 发送 URL"""
+    async def _send_image(adapter, image: Image) -> None:
+        """发送图片：获取本地路径 → 通过 API 服务器上传发送"""
         try:
             file_path = await image.convert_to_file_path()
         except Exception as e:
@@ -81,15 +73,28 @@ class SeewoEvent(AstrMessageEvent):
             logger.warning(f"Seewo: 图片文件不存在: {file_path}")
             return
 
-        url = await SeewoEvent._upload_file(account, file_path, "image/png")
-        if url:
-            await asyncio.to_thread(stu_msg.send, "", 2, url)
-        else:
-            logger.warning("Seewo: 图片上传失败")
+        # 使用 multipart 上传
+        data = aiohttp.FormData()
+        data.add_field(
+            "file",
+            open(file_path, "rb"),
+            filename=os.path.basename(file_path),
+            content_type="image/png",
+        )
+        headers = {"X-API-Key": adapter.api_key}
+        try:
+            async with adapter._session.post(
+                f"{adapter.api_url}/api/send_image", headers=headers, data=data
+            ) as resp:
+                result = await resp.json()
+                if result.get("status") != "ok":
+                    logger.warning(f"Seewo: 图片发送失败: {result}")
+        except Exception as e:
+            logger.error(f"Seewo: 图片发送异常: {e}")
 
     @staticmethod
-    async def _send_audio(stu_msg, account, record: Record) -> None:
-        """发送语音：先获取本地路径 → 上传到希沃云 → 发送 URL"""
+    async def _send_audio(adapter, record: Record) -> None:
+        """发送语音：获取本地路径 → 通过 API 服务器上传发送"""
         try:
             file_path = await record.convert_to_file_path()
         except Exception as e:
@@ -100,25 +105,7 @@ class SeewoEvent(AstrMessageEvent):
             logger.warning(f"Seewo: 语音文件不存在: {file_path}")
             return
 
-        url = await SeewoEvent._upload_file(account, file_path, "audio/mp3")
-        if url:
-            # 语音时长默认 666ms
-            voice_length = 666
-            await asyncio.to_thread(stu_msg.send, "", 3, url, voice_length)
-        else:
-            logger.warning("Seewo: 语音上传失败")
-
-    @staticmethod
-    async def _upload_file(account, file_path: str, content_type: str) -> str | None:
-        """上传文件到希沃云存储，返回下载 URL"""
-        from .things.upload import Upload
-
-        try:
-            up = await asyncio.to_thread(Upload, account)
-            await asyncio.to_thread(up.upload, file_path, content_type)
-            if up.isupload:
-                return up.downloadUrl
-            return None
-        except Exception as e:
-            logger.error(f"Seewo: 文件上传异常: {e}")
-            return None
+        # 本地服务器可以直接传文件路径
+        await adapter._api_post(
+            "/api/send_audio", {"file_path": file_path, "voice_length": 666}
+        )
