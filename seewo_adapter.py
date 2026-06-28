@@ -33,7 +33,7 @@ from astrbot.core.platform.platform import PlatformStatus
     default_config_tmpl={
         "api_url": "http://localhost:5001",
         "api_key": "your-secret-key",
-        "poll_interval": 5,
+        "poll_interval": 10,
     },
     adapter_display_name="希沃亲情留言",
     support_streaming_message=False,
@@ -55,7 +55,7 @@ class SeewoAdapter(Platform):
         self.settings = platform_settings
         self._api_url = platform_config.get("api_url", "http://localhost:5001").rstrip("/")
         self._api_key = platform_config.get("api_key", "your-secret-key")
-        self._poll_interval = platform_config.get("poll_interval", 5)
+        self._poll_interval = platform_config.get("poll_interval", 10)
         self._running = False
         self._last_msg_id: int = 0
         self._logged_in: bool = False
