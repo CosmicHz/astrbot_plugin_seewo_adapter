@@ -152,7 +152,7 @@ class SeewoAdapter(Platform):
                 data = await self._api_get("/api/messages", params={"count": "1"})
                 messages = data.get("messages", [])
                 if messages:
-                    self._last_msg_id = messages[0].get("id", 0)
+                    self._last_msg_id = int(messages[0].get("id", 0))
             except Exception as e:
                 logger.warning(f"Seewo: 获取初始消息 ID 失败: {e}")
 
@@ -172,6 +172,12 @@ class SeewoAdapter(Platform):
                 except Exception as e:
                     error_count += 1
                     logger.error(f"Seewo: 轮询出错 ({error_count}): {e}")
+                    try:
+                        from rich.traceback import Traceback
+                        logger.error(Traceback.extract().render())
+                    except Exception:
+                        import traceback
+                        logger.error(traceback.format_exc())
                     if error_count >= 5:
                         current_interval = min(current_interval * 2, 30)
                         logger.warning(f"Seewo: 退避至 {current_interval}s 轮询间隔")
@@ -200,11 +206,11 @@ class SeewoAdapter(Platform):
             return []
 
         # messages 按 ID 倒序（新→旧）
-        newest_id = raw_messages[0].get("id", self._last_msg_id)
+        newest_id = int(raw_messages[0].get("id", self._last_msg_id))
 
         new_student_msgs: list[dict] = []
         for m in raw_messages:
-            msg_id = m.get("id", 0)
+            msg_id = int(m.get("id", 0))
             if msg_id <= self._last_msg_id:
                 break
             if m.get("sender") == "student":
@@ -233,7 +239,7 @@ class SeewoAdapter(Platform):
             nickname=data.get("senderName", "未知"),
         )
 
-        msg_type = data.get("type", 1)
+        msg_type = int(data.get("type", 1))
         content = data.get("content", "")
         res_url = data.get("resUrl", "")
 
