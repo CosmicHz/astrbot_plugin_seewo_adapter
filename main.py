@@ -1,4 +1,7 @@
 import asyncio
+import base64
+import os
+import tempfile
 
 from astrbot.api.star import Context, Star, register
 from astrbot.api import logger
@@ -60,14 +63,35 @@ class SeewoAdapterPlugin(Star):
             yield event.plain_result("当前已登录，无需重新登录")
             return
 
-        yield event.plain_result("正在获取登录二维码，请查看 API 服务器日志中的二维码…")
-
         try:
-            # 触发 API 服务器的登录流程
+            # 触发 API 服务器的登录流程，获取二维码 base64
             qr_result = await adapter._api_get("/api/login/qrcode")
             if qr_result.get("status") != "ok":
                 yield event.plain_result(f"获取二维码失败: {qr_result.get('message', '')}")
                 return
+
+            # 将 base64 二维码图片保存为临时文件并发送
+            qr_b64 = qr_result.get("qrcode", "")
+            if qr_b64:
+                qr_bytes = base64.b64decode(qr_b64)
+                tmp_path = os.path.join(tempfile.gettempdir(), "seewo_qrcode.png")
+                with open(tmp_path, "wb") as f:
+                    f.write(qr_bytes)
+
+                # 尝试在日志中输出 ASCII 二维码
+                try:
+                    from .qrcode_util import qrcode_to_text
+                    qr_text = qrcode_to_text(tmp_path)
+                    logger.info("Seewo: 请使用微信扫描以下二维码登录：")
+                    for line in qr_text.splitlines():
+                        logger.info(line)
+                except ImportError:
+                    logger.info("Seewo: 二维码已生成，请扫描聊天中的图片（安装 Pillow 可在日志中显示 ASCII 二维码）")
+
+                yield event.plain_result("请使用微信扫描以下二维码登录：")
+                yield event.image_result(tmp_path)
+            else:
+                yield event.plain_result("正在登录，请查看 API 服务器日志中的二维码…")
 
             # 轮询登录状态
             for _ in range(150):  # 最多 5 分钟
@@ -81,7 +105,7 @@ class SeewoAdapterPlugin(Star):
                 elif status == "error":
                     yield event.plain_result(f"登录失败: {login_status.get('message', '')}")
                     return
-                # pending: 继续轮询
+                # pending/idle: 继续轮询
 
             yield event.plain_result("登录超时")
         except Exception as e:
