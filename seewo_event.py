@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 希沃亲情留言平台事件
 
@@ -53,12 +52,26 @@ class SeewoEvent(AstrMessageEvent):
 
     @staticmethod
     async def _send_text(adapter, text: str) -> None:
-        """发送文本消息"""
+        """发送文本消息
+
+        长消息交由 API 服务器按 long_message_strategy 处理
+        （truncate=截断 / split=按正则智能拆分多条）。
+        API 服务器会报告真实发送结果（含希沃状态码），失败仅记录日志不抛出。
+        """
         if not text:
             return
-        if len(text) > 199:
-            text = text[:196] + "..."
-        await adapter._api_post("/api/send", {"content": text})
+        result = await adapter._api_post(
+            "/api/send", {"content": text, "strategy": adapter.long_message_strategy}
+        )
+        if result.get("status") != "ok":
+            logger.warning(
+                f"Seewo: 文本发送失败: {result.get('message', result)}"
+                + (
+                    f" (seewoCode={result.get('seewoCode')})"
+                    if result.get("seewoCode")
+                    else ""
+                )
+            )
 
     @staticmethod
     async def _send_image(adapter, image: Image) -> None:
@@ -75,22 +88,25 @@ class SeewoEvent(AstrMessageEvent):
 
         # 使用 multipart 上传
         data = aiohttp.FormData()
-        data.add_field(
-            "file",
-            open(file_path, "rb"),
-            filename=os.path.basename(file_path),
-            content_type="image/png",
-        )
-        headers = {"X-API-Key": adapter.api_key}
-        try:
-            async with adapter._session.post(
-                f"{adapter.api_url}/api/send_image", headers=headers, data=data
-            ) as resp:
-                result = await resp.json()
-                if result.get("status") != "ok":
-                    logger.warning(f"Seewo: 图片发送失败: {result}")
-        except Exception as e:
-            logger.error(f"Seewo: 图片发送异常: {e}")
+        with open(file_path, "rb") as f:
+            data.add_field(
+                "file",
+                f,
+                filename=os.path.basename(file_path),
+                content_type="image/png",
+            )
+            headers = {"X-API-Key": adapter.api_key}
+            try:
+                async with adapter._session.post(
+                    f"{adapter.api_url}/api/send_image", headers=headers, data=data
+                ) as resp:
+                    result = await resp.json()
+                    if result.get("status") != "ok":
+                        logger.warning(
+                            f"Seewo: 图片发送失败: {result.get('message', result)}"
+                        )
+            except Exception as e:
+                logger.error(f"Seewo: 图片发送异常: {e}")
 
     @staticmethod
     async def _send_audio(adapter, record: Record) -> None:
@@ -106,6 +122,15 @@ class SeewoEvent(AstrMessageEvent):
             return
 
         # 本地服务器可以直接传文件路径
-        await adapter._api_post(
+        result = await adapter._api_post(
             "/api/send_audio", {"file_path": file_path, "voice_length": 666}
         )
+        if result.get("status") != "ok":
+            logger.warning(
+                f"Seewo: 语音发送失败: {result.get('message', result)}"
+                + (
+                    f" (seewoCode={result.get('seewoCode')})"
+                    if result.get("seewoCode")
+                    else ""
+                )
+            )

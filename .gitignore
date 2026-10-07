@@ -3,6 +3,9 @@ __pycache__/
 *.py[codz]
 *$py.class
 
+# uv 锁文件（插件依赖走 requirements.txt，见 AstrBot 插件依赖管理规范）
+uv.lock
+
 # C extensions
 *.so
 

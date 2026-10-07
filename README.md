@@ -8,7 +8,8 @@
 ## 功能
 
 - 接收学生从班牌发送的文本、图片、语音消息
-- AI 回复自动发送到班牌（支持文本、图片、语音）
+- AI 回复自动发送到班牌（支持文本、图片、语音），长文本由 API 服务器智能拆分为多条
+- 发送失败记录日志（含希沃状态码），Token 失效自动标记待重新登录
 - 通过本地 API 服务器（seewo_robot）收发消息，无需内嵌客户端代码
 - 微信扫码登录
 - 错误退避与自动重连
@@ -68,7 +69,8 @@ git clone https://github.com/CosmicHz/astrbot_plugin_seewo_adapter.git
 |--------|--------|------|
 | `api_url` | `http://localhost:5001` | seewo_robot API 服务器地址 |
 | `api_key` | `your-secret-key` | API 密钥 |
-| `poll_interval` | 5 | 轮询间隔（秒） |
+| `poll_interval` | `10` | 轮询间隔（秒） |
+| `long_message_strategy` | `split` | 长消息处理策略：`split`=按拆分点智能拆为多条发送（推荐），`truncate`=截断为 199 字 |
 
 ## 依赖
 

@@ -3,12 +3,12 @@ import base64
 import os
 import tempfile
 
-from astrbot.api.star import Context, Star, register
 from astrbot.api import logger
 from astrbot.api.event.filter import command
+from astrbot.api.star import Context, Star, register
 
 
-@register("seewo_adapter", "CosmicHz", "希沃亲情留言平台适配器", "0.1.0")
+@register("seewo_adapter", "CosmicHz", "希沃亲情留言平台适配器", "0.2.0")
 class SeewoAdapterPlugin(Star):
     def __init__(self, context: Context):
         super().__init__(context)
@@ -23,7 +23,7 @@ class SeewoAdapterPlugin(Star):
 
     def _get_adapter(self):
         """获取希沃适配器实例"""
-        return self.context.get_platform("seewo")
+        return self.context.get_platform_inst("seewo")
 
     @command("seewo_status")
     async def seewo_status(self, event):
@@ -67,7 +67,9 @@ class SeewoAdapterPlugin(Star):
             # 触发 API 服务器的登录流程，获取二维码 base64
             qr_result = await adapter._api_get("/api/login/qrcode")
             if qr_result.get("status") != "ok":
-                yield event.plain_result(f"获取二维码失败: {qr_result.get('message', '')}")
+                yield event.plain_result(
+                    f"获取二维码失败: {qr_result.get('message', '')}"
+                )
                 return
 
             # 将 base64 二维码图片保存为临时文件并发送
@@ -81,12 +83,15 @@ class SeewoAdapterPlugin(Star):
                 # 尝试在日志中输出 ASCII 二维码
                 try:
                     from .qrcode_util import qrcode_to_text
+
                     qr_text = qrcode_to_text(tmp_path)
                     logger.info("Seewo: 请使用微信扫描以下二维码登录：")
                     for line in qr_text.splitlines():
                         logger.info(line)
                 except ImportError:
-                    logger.info("Seewo: 二维码已生成，请扫描聊天中的图片（安装 Pillow 可在日志中显示 ASCII 二维码）")
+                    logger.info(
+                        "Seewo: 二维码已生成，请扫描聊天中的图片（安装 Pillow 可在日志中显示 ASCII 二维码）"
+                    )
 
                 yield event.plain_result("请使用微信扫描以下二维码登录：")
                 yield event.image_result(tmp_path)
@@ -103,7 +108,9 @@ class SeewoAdapterPlugin(Star):
                     yield event.plain_result("登录成功！")
                     return
                 elif status == "error":
-                    yield event.plain_result(f"登录失败: {login_status.get('message', '')}")
+                    yield event.plain_result(
+                        f"登录失败: {login_status.get('message', '')}"
+                    )
                     return
                 # pending/idle: 继续轮询
 
