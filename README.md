@@ -20,7 +20,7 @@
 AstrBot ←→ 本插件(适配器) ←→ seewo_robot API 服务器 ←→ 希沃云班
 ```
 
-本插件通过 HTTP 调用 [seewo_robot](https://github.com/cmy2008/seewo_robot) 的 API 服务器收发消息，自身仅负责消息轮询与 AstrBot 协议转换。
+本插件通过 HTTP 调用 [seewo_robot](https://github.com/CosmicHz/seewo_robot) 的 API 服务器收发消息，自身仅负责消息轮询与 AstrBot 协议转换。
 
 ## 前置条件
 
@@ -34,7 +34,7 @@ python api_server.py
 python mock_server.py
 ```
 
-详见 [seewo_robot 文档](https://github.com/cmy2008/seewo_robot)。
+详见 [seewo_robot 文档](https://github.com/CosmicHz/seewo_robot)。
 
 ## 安装
 
